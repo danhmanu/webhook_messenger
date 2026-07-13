@@ -1,0 +1,11 @@
+bin/
+obj/
+.git/
+.gitignore
+.env
+node_modules/
+worker-configuration.d.ts
+*.user
+*.suo
+*.cache
+README.md

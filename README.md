@@ -66,3 +66,53 @@ https://your-domain.com/webhook
 ## Deploy
 
 Co the deploy len Azure App Service, Render, Railway, VPS, Docker, hoac bat ky host nao chay ASP.NET Core. Nho cau hinh HTTPS public URL va cac environment variables o tren.
+
+## Deploy len Cloudflare Containers
+
+Project nay co san cau hinh Cloudflare Containers:
+
+- `Dockerfile`: build va chay ASP.NET Core app tren port `8080`.
+- `src/index.ts`: Cloudflare Worker proxy request vao container.
+- `wrangler.jsonc`: cau hinh Worker, Container va Durable Object binding.
+
+Yeu cau:
+
+- Cloudflare account co quyen dung Workers + Containers.
+- Docker dang chay local.
+- Da dang nhap Wrangler: `npx wrangler login`.
+
+Cai dependencies:
+
+```powershell
+npm install
+```
+
+Tao secret tren Cloudflare:
+
+```powershell
+npx wrangler secret put OPENAI_API_KEY
+npx wrangler secret put MESSENGER_VERIFY_TOKEN
+npx wrangler secret put MESSENGER_PAGE_ACCESS_TOKEN
+```
+
+Neu muon doi model hoac system prompt, sua `vars` trong `wrangler.jsonc`.
+
+Deploy:
+
+```powershell
+npm run deploy
+```
+
+Sau khi deploy, Cloudflare se tra ve URL dang:
+
+```text
+https://messenger-openai-webhook.<your-workers-subdomain>.workers.dev
+```
+
+Dung URL webhook trong Meta:
+
+```text
+https://messenger-openai-webhook.<your-workers-subdomain>.workers.dev/webhook
+```
+
+Verify Token tren Meta phai trung voi gia tri ban da nhap cho secret `MESSENGER_VERIFY_TOKEN`.
