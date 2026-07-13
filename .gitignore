@@ -315,6 +315,7 @@ FakesAssemblies/
 .ntvs_analysis.dat
 node_modules/
 worker-configuration.d.ts
+data/message-snippets.json
 
 # Visual Studio 6 build log
 *.plg
