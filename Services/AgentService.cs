@@ -13,59 +13,7 @@ public sealed class AgentService(
 
     public async Task<AgentResult> ProcessAsync(string senderId, string userText, CancellationToken cancellationToken)
     {
-        var memories = await database.GetAgentMemoriesAsync(senderId, cancellationToken);
-        var history = await database.GetConversationMessagesAsync(senderId, cancellationToken);
-        var snippets = await database.SearchActiveSnippetsAsync(userText, cancellationToken);
-
-        var systemPrompt = BuildSystemPrompt(memories, history.TakeLast(12), snippets);
-        var modelOutput = await openAi.CreateChatReplyAsync(systemPrompt, userText, cancellationToken);
-        var decision = ParseDecision(modelOutput);
-
-        var toolResults = new List<AgentToolCallResult>();
-
-        foreach (var toolRequest in decision.ToolsToCall ?? [])
-        {
-            var toolResult = await ExecuteToolAsync(senderId, toolRequest, cancellationToken);
-
-            if (toolResult is not null)
-            {
-                toolResults.Add(toolResult);
-            }
-        }
-
-        if (toolResults.Count > 0)
-        {
-            var followUpPrompt = BuildToolFollowUpPrompt(systemPrompt, userText, toolResults);
-            var followUpOutput = await openAi.CreateChatReplyAsync(followUpPrompt, userText, cancellationToken);
-            var followUpDecision = ParseDecision(followUpOutput);
-
-            if (!string.IsNullOrWhiteSpace(followUpDecision.Reply))
-            {
-                decision = decision with { Reply = followUpDecision.Reply };
-            }
-
-            if (followUpDecision.MemoriesToSave?.Count > 0)
-            {
-                decision = decision with
-                {
-                    MemoriesToSave = [.. decision.MemoriesToSave ?? [], .. followUpDecision.MemoriesToSave]
-                };
-            }
-        }
-
-        var savedMemories = new List<AgentMemoryDraft>();
-
-        foreach (var memory in decision.MemoriesToSave ?? [])
-        {
-            var saved = await database.SaveAgentMemoryAsync(senderId, memory, cancellationToken);
-
-            if (saved is not null)
-            {
-                savedMemories.Add(new AgentMemoryDraft(saved.MemoryType, saved.Content, saved.Importance));
-            }
-        }
-
-        var reply = decision.Reply?.Trim();
+        var reply = (await openAi.CreateChatReplyAsync("", userText, cancellationToken)).Trim();
 
         if (string.IsNullOrWhiteSpace(reply))
         {
@@ -73,12 +21,10 @@ public sealed class AgentService(
         }
 
         logger.LogInformation(
-            "Agent processed sender {SenderId} with {ToolCount} tool calls and {MemoryCount} saved memories",
-            senderId,
-            toolResults.Count,
-            savedMemories.Count);
+            "Agent processed sender {SenderId} with one chat API call",
+            senderId);
 
-        return new AgentResult(reply, toolResults, savedMemories);
+        return new AgentResult(reply, [], []);
     }
 
     private static string BuildSystemPrompt(
