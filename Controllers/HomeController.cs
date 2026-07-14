@@ -4,13 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 [Route("")]
 public sealed class HomeController : ControllerBase
 {
-    private readonly IWebHostEnvironment _environment;
-
-    public HomeController(IWebHostEnvironment environment)
-    {
-        _environment = environment;
-    }
-
     [HttpGet("")]
     public IActionResult Index() => Ok(new
     {
@@ -20,9 +13,10 @@ public sealed class HomeController : ControllerBase
 
     [HttpGet("admin")]
     [HttpGet("admin/{*path}")]
-    public IActionResult Admin()
+    public IActionResult Admin() => Ok(new
     {
-        var path = Path.Combine(_environment.WebRootPath ?? "wwwroot", "index.html");
-        return PhysicalFile(path, "text/html; charset=utf-8");
-    }
+        message = "Admin frontend runs as a separate service.",
+        url = "https://admin.vietnamhospital.cloud",
+        api = "/api/v1"
+    });
 }

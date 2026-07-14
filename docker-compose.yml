@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webhook-messenger-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      App__CorsOrigins__0: ${FRONTEND_ORIGIN:-https://admin.vietnamhospital.cloud}
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  admin_frontend:
+    build:
+      context: ./admin_frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-https://vietnamhospital.cloud/api/v1}
+    container_name: webhook-messenger-admin-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3000:80"

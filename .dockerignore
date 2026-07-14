@@ -4,6 +4,7 @@ obj/
 .gitignore
 .env
 node_modules/
+admin_frontend/
 worker-configuration.d.ts
 data/
 wwwroot/

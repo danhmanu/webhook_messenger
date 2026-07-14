@@ -314,6 +314,9 @@ FakesAssemblies/
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
 node_modules/
+wwwroot/*
+!wwwroot/.gitkeep
+admin_frontend/wwwroot/
 worker-configuration.d.ts
 data/message-snippets.json
 data/messenger-webhook.db

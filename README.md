@@ -2,7 +2,7 @@
 
 Ung dung ASP.NET Core dung lam webhook cho Facebook Messenger. Khi nguoi dung nhan tin den Page, app nhan webhook, goi OpenAI de tao cau tra loi, sau do gui lai tin nhan qua Facebook Graph API.
 
-Ung dung gom backend ASP.NET Core controller-based REST API/webhook va frontend quan tri React TypeScript duoc phuc vu chung trong mot service. Du lieu duoc luu bang SQLite trong thu muc `data/`.
+Ung dung gom backend ASP.NET Core controller-based REST API/webhook va frontend quan tri React TypeScript trong thu muc `admin_frontend`. Backend va frontend chay thanh 2 service rieng, du lieu duoc luu bang SQLite trong thu muc `data/`.
 
 ## Tinh nang
 
@@ -13,7 +13,7 @@ Ung dung gom backend ASP.NET Core controller-based REST API/webhook va frontend 
 - Ho tro text, quick reply, postback va attachment fallback.
 - Goi OpenAI Responses API de tao cau tra loi.
 - Gui typing indicator va tin nhan tra loi qua Graph API.
-- Trang quan tri React TypeScript tai `/admin`.
+- Trang quan tri React TypeScript chay rieng tai `admin.vietnamhospital.cloud`.
 - Luu hoi thoai, tin khach gui va tin bot/admin tra loi bang SQLite.
 - AI Agent tu dieu phoi truoc khi tra loi: chat model, memory SQLite va tool SQLite.
 - API RESTful versioned tai `/api/v1`.
@@ -49,6 +49,9 @@ App__MessengerAppSecret=your-facebook-app-secret
 App__MessengerGraphApiVersion=v25.0
 App__AdminToken=your-admin-token
 App__SystemPrompt=Ban la tro ly AI than thien cho fanpage Messenger. Tra loi ngan gon, tu nhien bang tieng Viet.
+App__CorsOrigins__0=https://admin.vietnamhospital.cloud
+FRONTEND_ORIGIN=https://admin.vietnamhospital.cloud
+VITE_API_BASE=https://vietnamhospital.cloud/api/v1
 ```
 
 Ghi chu:
@@ -61,14 +64,7 @@ Ghi chu:
 
 ## Chay local
 
-Build frontend vao `wwwroot/`:
-
-```bash
-npm install
-npm run build
-```
-
-Chay backend API/webhook va frontend admin chung mot service:
+Chay backend API/webhook:
 
 ```bash
 dotnet restore
@@ -83,25 +79,28 @@ curl http://127.0.0.1:5035/health
 
 Mo trang quan tri local:
 
-```text
-http://127.0.0.1:5035/admin
-```
-
-Khi phat trien frontend rieng tam thoi, co the chay:
-
 ```bash
+cd admin_frontend
+npm install
 npm run dev
 ```
 
 Vite dev server se proxy `/api`, `/health`, `/webhook` ve backend local `http://127.0.0.1:5035`.
 
+URL frontend local:
+
+```text
+http://127.0.0.1:5173
+```
+
 Build frontend production:
 
 ```bash
+cd admin_frontend
 npm run build
 ```
 
-Ket qua build nam trong `wwwroot/` va duoc ASP.NET Core phuc vu chung voi backend.
+Ket qua build nam trong `admin_frontend/wwwroot/`.
 
 ## Deploy Ubuntu bang Docker
 
@@ -129,7 +128,7 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.
   > /etc/apt/sources.list.d/docker.list
 
 apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
 Clone source:
@@ -146,21 +145,20 @@ Tao `.env`:
 nano .env
 ```
 
-Build va chay container:
+Build va chay 2 service:
 
 ```bash
-docker build -t webhook-messenger .
-
-docker run -d \
-  --name webhook-messenger \
-  --restart unless-stopped \
-  --env-file .env \
-  -v /opt/webhook_messenger/data:/app/data \
-  -p 127.0.0.1:8080:8080 \
-  webhook-messenger
+docker compose up -d --build
 ```
 
-Kiem tra app trong server:
+Mac dinh `docker-compose.yml` se chay:
+
+```text
+backend        -> http://127.0.0.1:8080
+admin_frontend -> http://127.0.0.1:3000
+```
+
+Kiem tra backend trong server:
 
 ```bash
 curl http://127.0.0.1:8080/health
@@ -168,7 +166,7 @@ curl http://127.0.0.1:8080/health
 
 ## Cau hinh Nginx va HTTPS
 
-Vi du domain la `vietnamhospital.cloud`.
+Vi du domain backend la `vietnamhospital.cloud`, domain frontend admin la `admin.vietnamhospital.cloud`.
 
 Tao file Nginx:
 
@@ -193,6 +191,21 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
+
+server {
+    listen 80;
+    server_name admin.vietnamhospital.cloud;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
 ```
 
 Bat site:
@@ -207,7 +220,7 @@ Cai HTTPS:
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx -d vietnamhospital.cloud
+certbot --nginx -d vietnamhospital.cloud -d admin.vietnamhospital.cloud
 ```
 
 Kiem tra:
@@ -262,13 +275,13 @@ message_reads
 Xem realtime:
 
 ```bash
-docker logs -f webhook-messenger
+docker logs -f webhook-messenger-backend
 ```
 
 Xem 100 dong cuoi:
 
 ```bash
-docker logs --tail 100 webhook-messenger
+docker logs --tail 100 webhook-messenger-backend
 ```
 
 Khi co message den, log se co dang:
@@ -294,7 +307,7 @@ Neu thay `Received Messenger webhook...` nhung khong thay reply, xem dong loi ng
 Mo:
 
 ```text
-https://vietnamhospital.cloud/admin
+https://admin.vietnamhospital.cloud
 ```
 
 Neu da cau hinh `App__AdminToken`, bam nut token o goc trai trang quan tri va nhap token.
@@ -368,24 +381,14 @@ GET /api/v1/conversations/{senderId}/agent-tool-calls
 ```bash
 cd /opt/webhook_messenger
 git pull
-
-docker build -t webhook-messenger .
-docker rm -f webhook-messenger
-
-docker run -d \
-  --name webhook-messenger \
-  --restart unless-stopped \
-  --env-file .env \
-  -v /opt/webhook_messenger/data:/app/data \
-  -p 127.0.0.1:8080:8080 \
-  webhook-messenger
+docker compose up -d --build
 ```
 
 Kiem tra lai:
 
 ```bash
 curl https://vietnamhospital.cloud/health
-docker logs --tail 100 webhook-messenger
+docker logs --tail 100 webhook-messenger-backend
 ```
 
 ## Loi thuong gap
@@ -411,7 +414,7 @@ Neu khong tra `abc123`:
 Kiem tra:
 
 ```bash
-docker logs -f webhook-messenger
+docker logs -f webhook-messenger-backend
 ```
 
 Neu khong co dong `Received Messenger webhook...`:
@@ -420,7 +423,7 @@ Neu khong co dong `Received Messenger webhook...`:
 - Page chua subscribe webhook.
 - URL callback sai.
 - Domain HTTPS loi.
-- Nginx/firewall chan request.
+- Nginx/firewall chan request vao backend.
 
 ### Co log nhung bot khong tra loi
 
@@ -430,7 +433,7 @@ Kiem tra:
 - `App__MessengerPageAccessToken` co dung va con hieu luc khong.
 - Page Access Token co quyen gui tin nhan khong.
 - Facebook App/Page da duoc cau hinh dung chua.
-- Xem loi chi tiet bang `docker logs --tail 100 webhook-messenger`.
+- Xem loi chi tiet bang `docker logs --tail 100 webhook-messenger-backend`.
 
 ### Thieu chu ky webhook
 
@@ -440,7 +443,6 @@ Neu cau hinh `App__MessengerAppSecret`, app se yeu cau header `X-Hub-Signature-2
 
 ```text
 GET  /health
-GET  /admin
 GET  /webhook
 POST /webhook
 GET  /api/v1/health
