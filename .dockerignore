@@ -5,6 +5,7 @@ obj/
 .env
 node_modules/
 admin_frontend/
+webhook_messenger/
 worker-configuration.d.ts
 data/
 wwwroot/
