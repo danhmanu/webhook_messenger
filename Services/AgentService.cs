@@ -89,7 +89,7 @@ public sealed class AgentService(
         var builder = new StringBuilder();
         builder.AppendLine("Ban la AI Agent xu ly tin nhan Facebook Messenger truoc khi phan hoi.");
         builder.AppendLine("Hay tra loi ngan gon, tu nhien bang tieng Viet.");
-        builder.AppendLine("Uu tien thong tin trong memory, lich su hoi thoai va tin nhan mau.");
+        builder.AppendLine("Uu tien tin nhan mau roi toi thong tin trong memory va lich su hoi thoai.");
         builder.AppendLine("Neu thieu thong tin quan trong, hoi lai mot cau ro rang.");
         builder.AppendLine("Khong bia dat gia, lich hen, chinh sach neu khong co du lieu.");
         builder.AppendLine();
