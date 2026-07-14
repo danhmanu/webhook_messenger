@@ -1,9 +1,9 @@
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection("App"));
-builder.Services.AddHttpClient<OpenAiCompatibleChatModel>();
-builder.Services.AddHttpClient<OpenAiService>();
+builder.Services.AddHttpClient<HospitalChatModel>();
 builder.Services.AddHttpClient<MessengerService>();
+builder.Services.AddScoped<OpenAiService>();
 builder.Services.AddScoped<AgentService>();
 builder.Services.AddSingleton<MessengerWebhookVerifier>();
 builder.Services.AddSingleton<AppDatabase>();

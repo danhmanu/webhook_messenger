@@ -1,7 +1,7 @@
 using System.Text;
 
 public sealed class OpenAiService(
-    OpenAiCompatibleChatModel chatModel,
+    HospitalChatModel chatModel,
     IConfiguration config,
     AppDatabase database)
 {

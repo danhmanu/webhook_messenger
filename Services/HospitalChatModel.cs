@@ -1,21 +1,11 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 
-public sealed class OpenAiCompatibleChatModel(HttpClient httpClient, IConfiguration config)
+public sealed class HospitalChatModel(HttpClient httpClient, IConfiguration config)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    // private readonly string _apiKey = config["App:OpenAiApiKey"] ?? "dummy";
-    // private readonly string _baseUrl = (config["App:OpenAiBaseUrl"] ?? "http://chatbot.bvdkgiadinh.com:5000/api").TrimEnd('/');
-    // private readonly string _model = config["App:OpenAiModel"] ?? "qwen3-8b";
-    // private readonly double _temperature = config.GetValue<double?>("App:OpenAiTemperature") ?? 0.7;
-    // private readonly int _maxTokens = config.GetValue<int?>("App:OpenAiMaxTokens") ?? 512;
-    private readonly string _apiKey =  "dummy";
-    private readonly string _baseUrl =  "http://chatbot.bvdkgiadinh.com:5000/api";
-    private readonly string _model = "qwen3-8b";
-    private readonly double _temperature =  0.7;
-    private readonly int _maxTokens = 512;
+    private readonly string _baseUrl = (config["App:OpenAiBaseUrl"] ?? "http://chatbot.bvdkgiadinh.com:5000/api").TrimEnd('/');
 
     public async Task<string> CreateChatCompletionAsync(
         string systemPrompt,
@@ -23,26 +13,10 @@ public sealed class OpenAiCompatibleChatModel(HttpClient httpClient, IConfigurat
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/chat");
-        // request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
         var body = new
         {
-            model = _model,
-            messages = new object[]
-            {
-                new
-                {
-                    role = "system",
-                    content = systemPrompt
-                },
-                new
-                {
-                    role = "user",
-                    content = userText
-                }
-            },
-            temperature = _temperature,
-            max_tokens = _maxTokens
+            question = userText
         };
 
         request.Content = new StringContent(
@@ -55,14 +29,34 @@ public sealed class OpenAiCompatibleChatModel(HttpClient httpClient, IConfigurat
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Chat completion API failed: {(int)response.StatusCode} {responseText}");
+            throw new InvalidOperationException($"Hospital chat API failed: {(int)response.StatusCode} {responseText}");
         }
 
         using var document = JsonDocument.Parse(responseText);
-        return ExtractChatCompletionText(document.RootElement) ?? "Minh chua co cau tra loi phu hop.";
+        return ExtractChatText(document.RootElement) ?? "Minh chua co cau tra loi phu hop.";
     }
 
-    private static string? ExtractChatCompletionText(JsonElement root)
+    private static string? ExtractChatText(JsonElement root)
+    {
+        if (TryGetString(root, "answer", out var answer))
+        {
+            return CleanModelText(answer);
+        }
+
+        if (TryGetString(root, "response", out var response))
+        {
+            return CleanModelText(response);
+        }
+
+        if (TryGetString(root, "message", out var messageText))
+        {
+            return CleanModelText(messageText);
+        }
+
+        return ExtractOpenAiCompatibleText(root);
+    }
+
+    private static string? ExtractOpenAiCompatibleText(JsonElement root)
     {
         if (!root.TryGetProperty("choices", out var choices) ||
             choices.ValueKind != JsonValueKind.Array ||
@@ -85,6 +79,19 @@ public sealed class OpenAiCompatibleChatModel(HttpClient httpClient, IConfigurat
             JsonValueKind.Array => CleanModelText(ExtractTextFromContentArray(content)),
             _ => null
         };
+    }
+
+    private static bool TryGetString(JsonElement root, string propertyName, out string? value)
+    {
+        value = null;
+
+        if (!root.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString();
+        return true;
     }
 
     private static string? ExtractTextFromContentArray(JsonElement content)
