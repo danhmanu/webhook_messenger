@@ -150,8 +150,12 @@ app.MapPost("/webhook", async (
 
     if (payload?.Object != "page")
     {
+        logger.LogInformation("Ignored webhook object {Object}", payload?.Object ?? "null");
         return Results.Ok();
     }
+
+    var entryCount = payload.Entry?.Count ?? 0;
+    logger.LogInformation("Received Messenger webhook with {EntryCount} entries", entryCount);
 
     foreach (var entry in payload.Entry ?? [])
     {
@@ -160,16 +164,42 @@ app.MapPost("/webhook", async (
             var senderId = messaging.Sender?.Id;
             var text = messaging.GetUserInput();
 
-            if (messaging.IsIgnorable || string.IsNullOrWhiteSpace(senderId) || string.IsNullOrWhiteSpace(text))
+            if (messaging.IsIgnorable)
             {
+                logger.LogInformation(
+                    "Ignored Messenger event {EventType} from sender {SenderId}",
+                    messaging.EventType,
+                    senderId ?? "unknown");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(senderId))
+            {
+                logger.LogWarning("Ignored Messenger event {EventType} because sender id is missing", messaging.EventType);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                logger.LogInformation("Ignored Messenger event {EventType} from sender {SenderId} because it has no text input", messaging.EventType, senderId);
                 continue;
             }
 
             try
             {
+                logger.LogInformation(
+                    "Handling Messenger message from sender {SenderId}: {MessagePreview}",
+                    senderId,
+                    TextPreview.ForLog(text));
+
                 await messenger.SendTypingOnAsync(senderId, cancellationToken);
                 var answer = await openAi.CreateChatReplyAsync(text, cancellationToken);
                 await messenger.SendTextAsync(senderId, answer, cancellationToken);
+
+                logger.LogInformation(
+                    "Sent Messenger reply to sender {SenderId}: {ReplyPreview}",
+                    senderId,
+                    TextPreview.ForLog(answer));
             }
             catch (Exception ex)
             {
@@ -412,6 +442,16 @@ static class AppConfig
         !string.IsNullOrWhiteSpace(value)
             ? value
             : throw new InvalidOperationException($"Missing {key}");
+}
+
+static class TextPreview
+{
+    public static string ForLog(string text)
+    {
+        const int maxLength = 180;
+        var normalized = text.ReplaceLineEndings(" ").Trim();
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength] + "...";
+    }
 }
 
 static class AdminAuth
@@ -665,6 +705,44 @@ sealed class MessengerMessaging
         Delivery.HasValue ||
         Read.HasValue ||
         Reaction.HasValue;
+
+    public string EventType
+    {
+        get
+        {
+            if (Message?.IsEcho == true)
+            {
+                return "message_echo";
+            }
+
+            if (Message is not null)
+            {
+                return Message.Attachments?.Count > 0 ? "message_attachment" : "message";
+            }
+
+            if (Postback is not null)
+            {
+                return "postback";
+            }
+
+            if (Delivery.HasValue)
+            {
+                return "delivery";
+            }
+
+            if (Read.HasValue)
+            {
+                return "read";
+            }
+
+            if (Reaction.HasValue)
+            {
+                return "reaction";
+            }
+
+            return "unknown";
+        }
+    }
 
     public string? GetUserInput()
     {
