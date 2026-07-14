@@ -1,6 +1,7 @@
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection("App"));
+builder.Services.AddHttpClient<OpenAiCompatibleChatModel>();
 builder.Services.AddHttpClient<OpenAiService>();
 builder.Services.AddHttpClient<MessengerService>();
 builder.Services.AddScoped<AgentService>();

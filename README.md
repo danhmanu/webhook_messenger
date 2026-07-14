@@ -11,7 +11,7 @@ Ung dung gom backend ASP.NET Core controller-based REST API/webhook va frontend 
 - Kiem tra chu ky `X-Hub-Signature-256` neu cau hinh `MessengerAppSecret`.
 - Bo qua event he thong nhu `delivery`, `read`, `reaction`, `is_echo`.
 - Ho tro text, quick reply, postback va attachment fallback.
-- Goi OpenAI Responses API de tao cau tra loi.
+- Goi OpenAI-compatible Chat Completions API de tao cau tra loi, mac dinh tro toi vLLM `qwen3-8b`.
 - Gui typing indicator va tin nhan tra loi qua Graph API.
 - Trang quan tri React TypeScript chay rieng tai `admin.vietnamhospital.cloud`.
 - Luu hoi thoai, tin khach gui va tin bot/admin tra loi bang SQLite.
@@ -19,14 +19,14 @@ Ung dung gom backend ASP.NET Core controller-based REST API/webhook va frontend 
 - API RESTful versioned tai `/api/v1`.
 - API quan ly snippet: `GET/POST/PUT/PATCH/DELETE /api/v1/message-snippets`.
 - API hop thu: `GET /api/v1/conversations`, `GET/POST /api/v1/conversations/{senderId}/messages`.
-- Log ro khi co message den, khi bo qua event, khi loi OpenAI/Messenger API.
+- Log ro khi co message den, khi bo qua event, khi loi chat model/Messenger API.
 
 ## Yeu cau
 
 - Domain HTTPS tro ve server, vi Facebook webhook yeu cau HTTPS.
 - Facebook App da bat Messenger product.
 - Facebook Page access token.
-- OpenAI API key.
+- Chat model endpoint OpenAI-compatible, vi du vLLM `/v1/chat/completions`.
 - Neu deploy bang Docker: Ubuntu server co Docker, Nginx va Certbot.
 
 ## Bien moi truong
@@ -41,8 +41,11 @@ nano .env
 Noi dung can cau hinh:
 
 ```env
-App__OpenAiApiKey=sk-your-openai-api-key
-App__OpenAiModel=gpt-4o-mini
+App__OpenAiBaseUrl=http://chatbot.bvdkgiadinh.com:8035/v1
+App__OpenAiApiKey=dummy
+App__OpenAiModel=qwen3-8b
+App__OpenAiTemperature=0.7
+App__OpenAiMaxTokens=512
 App__MessengerVerifyToken=your-random-verify-token
 App__MessengerPageAccessToken=your-facebook-page-access-token
 App__MessengerAppSecret=your-facebook-app-secret
@@ -61,12 +64,31 @@ Ghi chu:
 - `App__MessengerVerifyToken`: token tu dat, dung de Facebook xac minh webhook.
 - `App__MessengerPageAccessToken`: Page Access Token dung de gui tin nhan.
 - `App__MessengerAppSecret`: App Secret cua Facebook App, dung de kiem tra chu ky webhook.
+- `App__OpenAiBaseUrl`: endpoint OpenAI-compatible, mac dinh `http://chatbot.bvdkgiadinh.com:8035/v1`.
+- `App__OpenAiApiKey`: vLLM khong can key that, nhung client van gui header bearer; de `dummy`.
+- `App__OpenAiModel`: ten model vLLM dang serve, mac dinh `qwen3-8b`.
+- `App__OpenAiTemperature`, `App__OpenAiMaxTokens`: tham so sinh cau tra loi.
 - `App__AdminUsername`: ten dang nhap de seed tai khoan admin dau tien vao SQLite khi bang `admin_users` con trong.
 - `App__AdminPassword`: mat khau de seed tai khoan admin dau tien vao SQLite. App luu trong database bang hash PBKDF2, khong luu plain text.
 - `App__AdminSessionHours`: so gio hieu luc cua phien dang nhap admin. Mac dinh la 8 gio.
 - Khong nen commit `.env` hoac secret that len Git.
 
 ## Chay local
+
+Test chat model truc tiep:
+
+```bash
+curl http://chatbot.bvdkgiadinh.com:8035/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-8b",
+    "messages": [
+      { "role": "user", "content": "Xin chào, bạn là ai?" }
+    ],
+    "temperature": 0.7,
+    "max_tokens": 512
+  }'
+```
 
 Chay backend API/webhook:
 
@@ -433,7 +455,8 @@ Neu khong co dong `Received Messenger webhook...`:
 
 Kiem tra:
 
-- `App__OpenAiApiKey` co dung khong.
+- `App__OpenAiBaseUrl` co truy cap duoc khong.
+- `App__OpenAiModel` co dung voi model server dang serve khong.
 - `App__MessengerPageAccessToken` co dung va con hieu luc khong.
 - Page Access Token co quyen gui tin nhan khong.
 - Facebook App/Page da duoc cau hinh dung chua.
