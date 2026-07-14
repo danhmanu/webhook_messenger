@@ -11,8 +11,9 @@ public sealed class HealthController(IConfiguration config) : ControllerBase
         messengerPageAccessTokenConfigured = !string.IsNullOrWhiteSpace(config["App:MessengerPageAccessToken"]),
         messengerAppSecretConfigured = !string.IsNullOrWhiteSpace(config["App:MessengerAppSecret"]),
         openAiApiKeyConfigured = !string.IsNullOrWhiteSpace(config["App:OpenAiApiKey"]),
+        openAiBaseUrl = config["App:OpenAiBaseUrl"] ?? "http://chatbot.bvdkgiadinh.com:8035/v1",
         graphApiVersion = config["App:MessengerGraphApiVersion"] ?? "v25.0",
-        openAiModel = config["App:OpenAiModel"] ?? "gpt-4o-mini"
+        openAiModel = config["App:OpenAiModel"] ?? "qwen3-8b"
     });
 
     [HttpGet("api/v1/health")]
@@ -24,7 +25,8 @@ public sealed class HealthController(IConfiguration config) : ControllerBase
         messengerAppSecretConfigured = !string.IsNullOrWhiteSpace(config["App:MessengerAppSecret"]),
         adminTokenConfigured = !string.IsNullOrWhiteSpace(config["App:AdminToken"]),
         openAiApiKeyConfigured = !string.IsNullOrWhiteSpace(config["App:OpenAiApiKey"]),
+        openAiBaseUrl = config["App:OpenAiBaseUrl"] ?? "http://chatbot.bvdkgiadinh.com:8035/v1",
         graphApiVersion = config["App:MessengerGraphApiVersion"] ?? "v25.0",
-        openAiModel = config["App:OpenAiModel"] ?? "gpt-4o-mini"
+        openAiModel = config["App:OpenAiModel"] ?? "qwen3-8b"
     });
 }
