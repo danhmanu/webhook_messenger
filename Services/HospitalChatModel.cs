@@ -16,7 +16,7 @@ public sealed class HospitalChatModel(HttpClient httpClient, IConfiguration conf
 
         var body = new
         {
-            question = systemPrompt + " " + userText
+            question = userText
         };
 
         request.Content = new StringContent(
