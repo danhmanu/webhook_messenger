@@ -30,7 +30,8 @@ public sealed class OpenAiService(HttpClient httpClient, IConfiguration config, 
         {
             // model = _model,
             model = "qwen3-8b",
-            input = new object[]
+            // input = new object[]
+            messages = new object[]
             {
                 new
                 {
@@ -48,7 +49,9 @@ public sealed class OpenAiService(HttpClient httpClient, IConfiguration config, 
                         new { type = "input_text", text = userText }
                     }
                 }
-            }
+            },
+            temperature = 0.7,
+            max_tokens = 512
         };
 
         request.Content = new StringContent(
