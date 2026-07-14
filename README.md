@@ -47,7 +47,9 @@ App__MessengerVerifyToken=your-random-verify-token
 App__MessengerPageAccessToken=your-facebook-page-access-token
 App__MessengerAppSecret=your-facebook-app-secret
 App__MessengerGraphApiVersion=v25.0
-App__AdminToken=your-admin-token
+App__AdminUsername=admin
+App__AdminPassword=change-this-password
+App__AdminSessionHours=8
 App__SystemPrompt=Ban la tro ly AI than thien cho fanpage Messenger. Tra loi ngan gon, tu nhien bang tieng Viet.
 App__CorsOrigins__0=https://admin.vietnamhospital.cloud
 FRONTEND_ORIGIN=https://admin.vietnamhospital.cloud
@@ -59,7 +61,9 @@ Ghi chu:
 - `App__MessengerVerifyToken`: token tu dat, dung de Facebook xac minh webhook.
 - `App__MessengerPageAccessToken`: Page Access Token dung de gui tin nhan.
 - `App__MessengerAppSecret`: App Secret cua Facebook App, dung de kiem tra chu ky webhook.
-- `App__AdminToken`: token bao ve trang/API quan tri. Neu de trong, trang quan tri se mo tu do.
+- `App__AdminUsername`: ten dang nhap de seed tai khoan admin dau tien vao SQLite khi bang `admin_users` con trong.
+- `App__AdminPassword`: mat khau de seed tai khoan admin dau tien vao SQLite. App luu trong database bang hash PBKDF2, khong luu plain text.
+- `App__AdminSessionHours`: so gio hieu luc cua phien dang nhap admin. Mac dinh la 8 gio.
 - Khong nen commit `.env` hoac secret that len Git.
 
 ## Chay local
@@ -310,7 +314,7 @@ Mo:
 https://admin.vietnamhospital.cloud
 ```
 
-Neu da cau hinh `App__AdminToken`, bam nut token o goc trai trang quan tri va nhap token.
+Dang nhap bang tai khoan admin duoc luu trong SQLite. Khi database chua co user admin, app se tao user dau tien tu `App__AdminUsername` va `App__AdminPassword` trong `.env`. Token dang nhap duoc sinh ngau nhien, luu hash trong bang `admin_sessions` va het han theo `App__AdminSessionHours`.
 
 Chuc nang:
 
@@ -329,7 +333,7 @@ Du lieu SQLite duoc luu vao:
 data/messenger-webhook.db
 ```
 
-File nay la du lieu runtime va da duoc ignore khoi Git. Neu truoc do co file `data/message-snippets.json`, app se import snippet cu vao SQLite khi database moi chua co snippet.
+File nay la du lieu runtime va da duoc ignore khoi Git. Bang `admin_users` luu tai khoan admin, trong do mat khau duoc hash PBKDF2. Bang `admin_sessions` luu hash token dang nhap, thoi diem het han va trang thai thu hoi. Khi doi mat khau, cac phien dang nhap hien tai se bi thu hoi va nguoi dung can dang nhap lai. Neu truoc do co file `data/message-snippets.json`, app se import snippet cu vao SQLite khi database moi chua co snippet.
 
 ## AI Agent
 

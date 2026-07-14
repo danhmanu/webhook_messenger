@@ -26,6 +26,22 @@ export type HealthStatus = {
   openAiModel: string;
 };
 
+export type AuthSession = {
+  authenticated: boolean;
+  accessToken: string | null;
+  username: string | null;
+  expiresAt: string;
+  adminTokenConfigured: boolean;
+  adminUsernameConfigured: boolean;
+  adminPasswordConfigured: boolean;
+};
+
+export type PasswordChangeInput = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
 export type ConversationSummary = {
   senderId: string;
   displayName: string | null;

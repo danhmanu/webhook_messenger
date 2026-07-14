@@ -1,7 +1,9 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
-public sealed class AppDatabase(IWebHostEnvironment environment)
+public sealed class AppDatabase(IWebHostEnvironment environment, IConfiguration config)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -83,9 +85,308 @@ public sealed class AppDatabase(IWebHostEnvironment environment)
 
                 CREATE INDEX IF NOT EXISTS ix_agent_tool_calls_sender_created
                     ON agent_tool_calls(sender_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS admin_users (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_login_at TEXT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS admin_sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    revoked_at TEXT NULL,
+                    last_seen_at TEXT NULL,
+                    FOREIGN KEY(user_id) REFERENCES admin_users(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS ix_admin_sessions_token_hash
+                    ON admin_sessions(token_hash);
+
+                CREATE INDEX IF NOT EXISTS ix_admin_sessions_user_expires
+                    ON admin_sessions(user_id, expires_at DESC);
                 """, cancellationToken);
 
             await ImportLegacySnippetsIfNeededAsync(connection, cancellationToken);
+            await SeedAdminUserIfNeededAsync(connection, cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<AdminUser?> AuthenticateAdminUserAsync(
+        string? username,
+        string? password,
+        CancellationToken cancellationToken)
+    {
+        username = username?.Trim();
+
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            return null;
+        }
+
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT id, username, password_hash, display_name, is_active, created_at, updated_at, last_login_at
+                FROM admin_users
+                WHERE lower(username) = lower($username)
+                LIMIT 1;
+                """;
+            AddParameter(command, "$username", username);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            if (!await reader.ReadAsync(cancellationToken) || reader.GetInt32(4) != 1)
+            {
+                return null;
+            }
+
+            var passwordHash = reader.GetString(2);
+
+            if (!AdminPasswordHasher.Verify(password, passwordHash))
+            {
+                return null;
+            }
+
+            var user = new AdminUser(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(3),
+                reader.GetInt32(4) == 1,
+                FromStorage(reader.GetString(5)),
+                FromStorage(reader.GetString(6)),
+                reader.IsDBNull(7) ? null : FromStorage(reader.GetString(7)));
+
+            await reader.DisposeAsync();
+
+            await using var updateCommand = connection.CreateCommand();
+            updateCommand.CommandText = """
+                UPDATE admin_users
+                SET last_login_at = $lastLoginAt,
+                    updated_at = $updatedAt
+                WHERE id = $id;
+                """;
+            var now = DateTimeOffset.UtcNow;
+            AddParameter(updateCommand, "$id", user.Id);
+            AddParameter(updateCommand, "$lastLoginAt", ToStorage(now));
+            AddParameter(updateCommand, "$updatedAt", ToStorage(now));
+            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            return user with
+            {
+                LastLoginAt = now,
+                UpdatedAt = now
+            };
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<bool> HasAdminUsersAsync(CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            return await HasAdminUsersUnlockedAsync(connection, cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<AdminSessionCreated> CreateAdminSessionAsync(
+        AdminUser user,
+        TimeSpan lifetime,
+        CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            var token = CreateToken();
+            var now = DateTimeOffset.UtcNow;
+            var session = new AdminSession(
+                Guid.NewGuid().ToString("N"),
+                user.Id,
+                user.Username,
+                now,
+                now.Add(lifetime),
+                null,
+                now);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO admin_sessions
+                    (id, user_id, token_hash, created_at, expires_at, revoked_at, last_seen_at)
+                VALUES
+                    ($id, $userId, $tokenHash, $createdAt, $expiresAt, NULL, $lastSeenAt);
+                """;
+            AddParameter(command, "$id", session.Id);
+            AddParameter(command, "$userId", session.UserId);
+            AddParameter(command, "$tokenHash", HashToken(token));
+            AddParameter(command, "$createdAt", ToStorage(session.CreatedAt));
+            AddParameter(command, "$expiresAt", ToStorage(session.ExpiresAt));
+            AddParameter(command, "$lastSeenAt", ToStorage(now));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            return new AdminSessionCreated(token, session);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<AdminSession?> ValidateAdminSessionAsync(string? token, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return null;
+        }
+
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            var session = await GetValidAdminSessionUnlockedAsync(connection, token, cancellationToken);
+
+            if (session is null)
+            {
+                return null;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE admin_sessions
+                SET last_seen_at = $lastSeenAt
+                WHERE id = $id;
+                """;
+            AddParameter(command, "$id", session.Id);
+            AddParameter(command, "$lastSeenAt", ToStorage(DateTimeOffset.UtcNow));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return session;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task RevokeAdminSessionAsync(string? token, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await RevokeAdminSessionUnlockedAsync(connection, token, cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<bool> ChangeAdminPasswordAsync(
+        string? token,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(token) ||
+            string.IsNullOrWhiteSpace(currentPassword) ||
+            string.IsNullOrWhiteSpace(newPassword) ||
+            newPassword.Length < 8)
+        {
+            return false;
+        }
+
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            var session = await GetValidAdminSessionUnlockedAsync(connection, token, cancellationToken);
+
+            if (session is null)
+            {
+                return false;
+            }
+
+            await using var selectCommand = connection.CreateCommand();
+            selectCommand.CommandText = """
+                SELECT password_hash
+                FROM admin_users
+                WHERE id = $id AND is_active = 1;
+                """;
+            AddParameter(selectCommand, "$id", session.UserId);
+            var currentHash = await selectCommand.ExecuteScalarAsync(cancellationToken) as string;
+
+            if (string.IsNullOrWhiteSpace(currentHash) || !AdminPasswordHasher.Verify(currentPassword, currentHash))
+            {
+                return false;
+            }
+
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+            await using (var updateUser = connection.CreateCommand())
+            {
+                updateUser.Transaction = (SqliteTransaction)transaction;
+                updateUser.CommandText = """
+                    UPDATE admin_users
+                    SET password_hash = $passwordHash,
+                        updated_at = $updatedAt
+                    WHERE id = $id;
+                    """;
+                AddParameter(updateUser, "$id", session.UserId);
+                AddParameter(updateUser, "$passwordHash", AdminPasswordHasher.Hash(newPassword));
+                AddParameter(updateUser, "$updatedAt", ToStorage(DateTimeOffset.UtcNow));
+                await updateUser.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var revokeSessions = connection.CreateCommand())
+            {
+                revokeSessions.Transaction = (SqliteTransaction)transaction;
+                revokeSessions.CommandText = """
+                    UPDATE admin_sessions
+                    SET revoked_at = $revokedAt
+                    WHERE user_id = $userId AND revoked_at IS NULL;
+                    """;
+                AddParameter(revokeSessions, "$userId", session.UserId);
+                AddParameter(revokeSessions, "$revokedAt", ToStorage(DateTimeOffset.UtcNow));
+                await revokeSessions.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+            return true;
         }
         finally
         {
@@ -726,6 +1027,98 @@ public sealed class AppDatabase(IWebHostEnvironment environment)
         }
     }
 
+    private async Task SeedAdminUserIfNeededAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        if (await HasAdminUsersUnlockedAsync(connection, cancellationToken))
+        {
+            return;
+        }
+
+        var username = config["App:AdminUsername"]?.Trim();
+        var password = config["App:AdminPassword"];
+
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO admin_users
+                (id, username, password_hash, display_name, is_active, created_at, updated_at, last_login_at)
+            VALUES
+                ($id, $username, $passwordHash, $displayName, 1, $createdAt, $updatedAt, NULL);
+            """;
+        AddParameter(command, "$id", Guid.NewGuid().ToString("N"));
+        AddParameter(command, "$username", username);
+        AddParameter(command, "$passwordHash", AdminPasswordHasher.Hash(password));
+        AddParameter(command, "$displayName", username);
+        AddParameter(command, "$createdAt", ToStorage(now));
+        AddParameter(command, "$updatedAt", ToStorage(now));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> HasAdminUsersUnlockedAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM admin_users;";
+        var count = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+        return count > 0;
+    }
+
+    private static async Task<AdminSession?> GetValidAdminSessionUnlockedAsync(
+        SqliteConnection connection,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.id, s.user_id, u.username, s.created_at, s.expires_at, s.revoked_at, s.last_seen_at
+            FROM admin_sessions s
+            JOIN admin_users u ON u.id = s.user_id
+            WHERE s.token_hash = $tokenHash
+              AND s.revoked_at IS NULL
+              AND s.expires_at > $now
+              AND u.is_active = 1
+            LIMIT 1;
+            """;
+        AddParameter(command, "$tokenHash", HashToken(token));
+        AddParameter(command, "$now", ToStorage(DateTimeOffset.UtcNow));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new AdminSession(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            FromStorage(reader.GetString(3)),
+            FromStorage(reader.GetString(4)),
+            reader.IsDBNull(5) ? null : FromStorage(reader.GetString(5)),
+            reader.IsDBNull(6) ? null : FromStorage(reader.GetString(6)));
+    }
+
+    private static async Task RevokeAdminSessionUnlockedAsync(
+        SqliteConnection connection,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE admin_sessions
+            SET revoked_at = $revokedAt
+            WHERE token_hash = $tokenHash AND revoked_at IS NULL;
+            """;
+        AddParameter(command, "$tokenHash", HashToken(token));
+        AddParameter(command, "$revokedAt", ToStorage(DateTimeOffset.UtcNow));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<MessageSnippet?> GetSnippetByIdUnlockedAsync(SqliteConnection connection, string id, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -801,4 +1194,9 @@ public sealed class AppDatabase(IWebHostEnvironment environment)
     private static string ToStorage(DateTimeOffset value) => value.UtcDateTime.ToString("O");
 
     private static DateTimeOffset FromStorage(string value) => DateTimeOffset.Parse(value);
+
+    private static string CreateToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+
+    private static string HashToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 }

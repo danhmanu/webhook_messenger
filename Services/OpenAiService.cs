@@ -19,14 +19,17 @@ public sealed class OpenAiService(HttpClient httpClient, IConfiguration config, 
 
     public async Task<string> CreateChatReplyAsync(string systemPrompt, string userText, CancellationToken cancellationToken)
     {
-        var apiKey = AppConfig.Required(_apiKey, "App:OpenAiApiKey");
+        // var apiKey = AppConfig.Required(_apiKey, "App:OpenAiApiKey");
+        var apiKey = "dummy";
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
+        // using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "http://chatbot.bvdkgiadinh.com:8035/v1/chat/completions");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
         var body = new
         {
-            model = _model,
+            // model = _model,
+            model = "qwen3-8b",
             input = new object[]
             {
                 new

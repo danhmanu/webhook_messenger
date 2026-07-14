@@ -1,20 +1,10 @@
-using System.Security.Cryptography;
-using System.Text;
-
 public static class AdminAuth
 {
-    public static bool IsAuthorized(HttpRequest request, IConfiguration config)
-    {
-        var adminToken = config["App:AdminToken"];
+    public static string GetToken(HttpRequest request) => request.Headers["X-Admin-Token"].ToString();
 
-        if (string.IsNullOrWhiteSpace(adminToken))
-        {
-            return true;
-        }
-
-        var headerToken = request.Headers["X-Admin-Token"].ToString();
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(adminToken),
-            Encoding.UTF8.GetBytes(headerToken));
-    }
+    public static async Task<AdminSession?> GetSessionAsync(
+        HttpRequest request,
+        AppDatabase database,
+        CancellationToken cancellationToken) =>
+        await database.ValidateAdminSessionAsync(GetToken(request), cancellationToken);
 }

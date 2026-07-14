@@ -2,12 +2,12 @@ using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/v1/message-snippets")]
-public sealed class MessageSnippetsController(AppDatabase database, IConfiguration config) : ControllerBase
+public sealed class MessageSnippetsController(AppDatabase database) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -19,7 +19,7 @@ public sealed class MessageSnippetsController(AppDatabase database, IConfigurati
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -31,7 +31,7 @@ public sealed class MessageSnippetsController(AppDatabase database, IConfigurati
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] MessageSnippetUpsert input, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -49,7 +49,7 @@ public sealed class MessageSnippetsController(AppDatabase database, IConfigurati
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(string id, [FromBody] MessageSnippetUpsert input, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -61,7 +61,7 @@ public sealed class MessageSnippetsController(AppDatabase database, IConfigurati
     [HttpPatch("{id}/activation")]
     public async Task<IActionResult> SetActivation(string id, [FromBody] MessageSnippetActivation input, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -73,7 +73,7 @@ public sealed class MessageSnippetsController(AppDatabase database, IConfigurati
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }

@@ -1,15 +1,18 @@
 import type {
   AgentMemory,
   AgentToolCallLog,
+  AuthSession,
   ConversationMessage,
   ConversationSummary,
   HealthStatus,
   MessageSnippet,
-  MessageSnippetInput
+  MessageSnippetInput,
+  PasswordChangeInput
 } from "./types";
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "/api/v1").replace(/\/$/, "");
 const TOKEN_STORAGE_KEY = "messenger_admin_token";
+const USERNAME_STORAGE_KEY = "messenger_admin_username";
 
 export const getStoredAdminToken = () => localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
 
@@ -22,8 +25,24 @@ export const setStoredAdminToken = (token: string) => {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
 };
 
-const request = async <T>(path: string, options: RequestInit = {}): Promise<T> => {
-  const token = getStoredAdminToken();
+export const getStoredAdminUsername = () => localStorage.getItem(USERNAME_STORAGE_KEY) ?? "";
+
+export const setStoredAdminUsername = (username: string) => {
+  if (username.trim()) {
+    localStorage.setItem(USERNAME_STORAGE_KEY, username.trim());
+    return;
+  }
+
+  localStorage.removeItem(USERNAME_STORAGE_KEY);
+};
+
+export const clearStoredAdminSession = () => {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(USERNAME_STORAGE_KEY);
+};
+
+const request = async <T>(path: string, options: RequestInit = {}, tokenOverride?: string): Promise<T> => {
+  const token = tokenOverride ?? getStoredAdminToken();
   const headers = new Headers(options.headers);
 
   if (!(options.body instanceof FormData)) {
@@ -40,11 +59,20 @@ const request = async <T>(path: string, options: RequestInit = {}): Promise<T> =
   });
 
   if (response.status === 401) {
-    throw new Error("Token quan tri khong hop le");
+    throw new Error("Tên đăng nhập hoặc mật khẩu không đúng");
   }
 
   if (!response.ok) {
-    throw new Error(`API loi ${response.status}`);
+    let message = `API lỗi ${response.status}`;
+
+    try {
+      const errorBody = await response.json() as { message?: string };
+      message = errorBody.message || message;
+    } catch {
+      // Keep the generic status message when the API does not return JSON.
+    }
+
+    throw new Error(message);
   }
 
   if (response.status === 204) {
@@ -55,6 +83,21 @@ const request = async <T>(path: string, options: RequestInit = {}): Promise<T> =
 };
 
 export const api = {
+  login: (username: string, password: string) =>
+    request<AuthSession>("/auth/session", {
+      method: "POST",
+      body: JSON.stringify({ username, password })
+    }, ""),
+  validateSession: () => request<AuthSession>("/auth/session"),
+  logout: () =>
+    request<void>("/auth/session", {
+      method: "DELETE"
+    }),
+  changePassword: (input: PasswordChangeInput) =>
+    request<{ changed: boolean; message: string }>("/auth/password", {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    }),
   health: () => request<HealthStatus>("/health"),
   listSnippets: () => request<MessageSnippet[]>("/message-snippets"),
   createSnippet: (input: MessageSnippetInput) =>

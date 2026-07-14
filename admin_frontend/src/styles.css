@@ -53,6 +53,102 @@ p {
   min-height: 100vh;
 }
 
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(180deg, #f7f9fc 0%, #edf2f7 100%);
+}
+
+.login-panel {
+  display: grid;
+  gap: 26px;
+  width: min(100%, 420px);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.login-brand h1 {
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.login-brand p,
+.session-card p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.login-form {
+  display: grid;
+  gap: 16px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.login-form label > span {
+  color: #344054;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.input-with-icon {
+  position: relative;
+}
+
+.input-with-icon svg {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+
+.input-with-icon input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px 0 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  outline: none;
+}
+
+.input-with-icon input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(11, 101, 216, 0.14);
+}
+
+.remember-row {
+  display: flex !important;
+  grid-template-columns: none;
+  gap: 9px !important;
+  align-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.remember-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+}
+
 .nav-panel {
   display: flex;
   flex-direction: column;
@@ -144,10 +240,15 @@ p {
 }
 
 .system-card,
-.token-card {
+.session-card {
   display: grid;
   gap: 10px;
   padding-top: 8px;
+}
+
+.password-form {
+  display: grid;
+  gap: 10px;
 }
 
 .card-title {
@@ -234,8 +335,8 @@ p {
 }
 
 .search-box input,
-.token-card input,
 .editor-panel input,
+.password-form input,
 .editor-panel textarea,
 .reply-box textarea {
   width: 100%;
@@ -247,8 +348,8 @@ p {
 }
 
 .search-box input,
-.token-card input,
-.editor-panel input {
+.editor-panel input,
+.password-form input {
   height: 42px;
   padding: 0 12px;
 }
@@ -271,8 +372,8 @@ p {
 }
 
 .search-box input:focus,
-.token-card input:focus,
 .editor-panel input:focus,
+.password-form input:focus,
 .editor-panel textarea:focus,
 .reply-box textarea:focus {
   border-color: var(--primary);
@@ -515,13 +616,15 @@ p {
 }
 
 .editor-panel label,
-.token-card label {
+.session-card label,
+.password-form label {
   display: grid;
   gap: 8px;
 }
 
 .editor-panel label span,
-.token-card label span {
+.session-card label span,
+.password-form label span {
   color: #344054;
   font-size: 13px;
   font-weight: 900;
@@ -607,6 +710,11 @@ button:disabled {
   background: #fff0f1;
   color: var(--danger);
   font-weight: 800;
+}
+
+.alert.compact {
+  margin-bottom: 0;
+  font-size: 13px;
 }
 
 .empty-state {

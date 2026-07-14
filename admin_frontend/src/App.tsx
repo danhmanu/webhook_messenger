@@ -5,7 +5,8 @@ import {
   CheckCircle2,
   CircleOff,
   Inbox,
-  KeyRound,
+  LockKeyhole,
+  LogOut,
   MessageCircle,
   MessageSquareText,
   Plus,
@@ -16,7 +17,14 @@ import {
   Trash2,
   UserRound
 } from "lucide-react";
-import { api, getStoredAdminToken, setStoredAdminToken } from "./api";
+import {
+  api,
+  clearStoredAdminSession,
+  getStoredAdminToken,
+  getStoredAdminUsername,
+  setStoredAdminToken,
+  setStoredAdminUsername
+} from "./api";
 import type {
   AgentMemory,
   AgentToolCallLog,
@@ -24,10 +32,12 @@ import type {
   ConversationSummary,
   HealthStatus,
   MessageSnippet,
-  MessageSnippetInput
+  MessageSnippetInput,
+  PasswordChangeInput
 } from "./types";
 
 type ViewMode = "inbox" | "snippets";
+type AuthState = "checking" | "signedOut" | "signedIn";
 type SnippetForm = MessageSnippetInput;
 
 const emptySnippetForm: SnippetForm = {
@@ -64,10 +74,24 @@ const formatTime = (value?: string) => {
 export function App() {
   const [view, setView] = useState<ViewMode>("inbox");
   const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [status, setStatus] = useState("Dang tai...");
+  const [status, setStatus] = useState("Đang tải...");
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const [adminToken, setAdminToken] = useState(getStoredAdminToken);
+  const [authState, setAuthState] = useState<AuthState>(getStoredAdminToken() ? "checking" : "signedOut");
+  const [currentUsername, setCurrentUsername] = useState(getStoredAdminUsername);
+  const [sessionExpiresAt, setSessionExpiresAt] = useState<string | null>(null);
+  const [loginForm, setLoginForm] = useState({
+    username: getStoredAdminUsername(),
+    password: "",
+    remember: true
+  });
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isPasswordFormOpen, setIsPasswordFormOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState<PasswordChangeInput>({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  });
 
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedSenderId, setSelectedSenderId] = useState<string | null>(null);
@@ -171,7 +195,7 @@ export function App() {
 
   const loadAll = async (preferredSenderId = selectedSenderId, preferredSnippetId = selectedSnippetId) => {
     setIsBusy(true);
-    showStatus("Dang dong bo...");
+    showStatus("Đang đồng bộ...");
 
     try {
       await Promise.all([
@@ -179,9 +203,9 @@ export function App() {
         loadConversations(preferredSenderId),
         loadSnippets(preferredSnippetId)
       ]);
-      showStatus("Da dong bo");
+      showStatus("Đã đồng bộ");
     } catch (loadError) {
-      showStatus(loadError instanceof Error ? loadError.message : "Khong tai duoc du lieu", true);
+      showStatus(loadError instanceof Error ? loadError.message : "Không tải được dữ liệu", true);
     } finally {
       setIsBusy(false);
     }
@@ -222,9 +246,91 @@ export function App() {
     setSnippetForm(emptySnippetForm);
   };
 
-  const handleTokenSave = () => {
-    setStoredAdminToken(adminToken);
-    loadAll();
+  const handleLogin = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (!loginForm.username.trim() || !loginForm.password) {
+      setLoginError("Vui lòng nhập tên đăng nhập và mật khẩu");
+      return;
+    }
+
+    setIsBusy(true);
+    setLoginError(null);
+
+    try {
+      const session = await api.login(loginForm.username.trim(), loginForm.password);
+
+      if (!session.accessToken) {
+        throw new Error("Backend chưa cấu hình admin token");
+      }
+
+      setStoredAdminToken(session.accessToken);
+      setStoredAdminUsername(loginForm.remember ? loginForm.username.trim() : "");
+      setCurrentUsername(session.username ?? loginForm.username.trim());
+      setSessionExpiresAt(session.expiresAt);
+      setLoginForm((current) => ({ ...current, password: "" }));
+      setAuthState("signedIn");
+      await loadAll(null, null);
+    } catch (loginException) {
+      clearStoredAdminSession();
+      setAuthState("signedOut");
+      setLoginError(loginException instanceof Error ? loginException.message : "Đăng nhập thất bại");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch {
+      // Local logout should still work when the server session is already gone.
+    }
+
+    clearStoredAdminSession();
+    setAuthState("signedOut");
+    setCurrentUsername("");
+    setSessionExpiresAt(null);
+    setHealth(null);
+    setConversations([]);
+    setMessages([]);
+    setAgentMemories([]);
+    setAgentToolCalls([]);
+    setSnippets([]);
+    showStatus("Đã đăng xuất");
+  };
+
+  const handlePasswordChange = async (event: FormEvent) => {
+    event.preventDefault();
+
+    if (passwordForm.newPassword.length < 8) {
+      showStatus("Mật khẩu mới phải có ít nhất 8 ký tự", true);
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      showStatus("Mật khẩu xác nhận không khớp", true);
+      return;
+    }
+
+    setIsBusy(true);
+
+    try {
+      await api.changePassword(passwordForm);
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      });
+      clearStoredAdminSession();
+      setSessionExpiresAt(null);
+      setAuthState("signedOut");
+      showStatus("Đã đổi mật khẩu. Vui lòng đăng nhập lại.");
+    } catch (changeError) {
+      showStatus(changeError instanceof Error ? changeError.message : "Không đổi được mật khẩu", true);
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleSendReply = async (event: FormEvent) => {
@@ -235,15 +341,15 @@ export function App() {
     }
 
     setIsBusy(true);
-    showStatus("Dang gui tra loi...");
+    showStatus("Đang gửi trả lời...");
 
     try {
       await api.sendConversationMessage(selectedSenderId, replyText.trim());
       setReplyText("");
       await loadConversations(selectedSenderId);
-      showStatus("Da gui tra loi");
+      showStatus("Đã gửi trả lời");
     } catch (sendError) {
-      showStatus(sendError instanceof Error ? sendError.message : "Khong gui duoc", true);
+      showStatus(sendError instanceof Error ? sendError.message : "Không gửi được", true);
     } finally {
       setIsBusy(false);
     }
@@ -260,12 +366,12 @@ export function App() {
     };
 
     if (!payload.title || !payload.content) {
-      showStatus("Can nhap tieu de va noi dung", true);
+      showStatus("Cần nhập tiêu đề và nội dung", true);
       return;
     }
 
     setIsBusy(true);
-    showStatus("Dang luu doan tin...");
+    showStatus("Đang lưu đoạn tin...");
 
     try {
       const saved = selectedSnippetId
@@ -273,28 +379,28 @@ export function App() {
         : await api.createSnippet(payload);
 
       await loadSnippets(saved.id);
-      showStatus("Da luu doan tin");
+      showStatus("Đã lưu đoạn tin");
     } catch (saveError) {
-      showStatus(saveError instanceof Error ? saveError.message : "Khong luu duoc", true);
+      showStatus(saveError instanceof Error ? saveError.message : "Không lưu được", true);
     } finally {
       setIsBusy(false);
     }
   };
 
   const handleSnippetDelete = async () => {
-    if (!selectedSnippet || !confirm(`Xoa "${selectedSnippet.title}"?`)) {
+    if (!selectedSnippet || !confirm(`Xóa "${selectedSnippet.title}"?`)) {
       return;
     }
 
     setIsBusy(true);
-    showStatus("Dang xoa...");
+    showStatus("Đang xóa...");
 
     try {
       await api.deleteSnippet(selectedSnippet.id);
       await loadSnippets(null);
-      showStatus("Da xoa");
+      showStatus("Đã xóa");
     } catch (deleteError) {
-      showStatus(deleteError instanceof Error ? deleteError.message : "Khong xoa duoc", true);
+      showStatus(deleteError instanceof Error ? deleteError.message : "Không xóa được", true);
     } finally {
       setIsBusy(false);
     }
@@ -302,22 +408,57 @@ export function App() {
 
   const toggleSnippetActive = async (snippet: MessageSnippet) => {
     setIsBusy(true);
-    showStatus("Dang cap nhat...");
+    showStatus("Đang cập nhật...");
 
     try {
       const updated = await api.setSnippetActive(snippet.id, !snippet.isActive);
       await loadSnippets(updated.id);
-      showStatus(updated.isActive ? "Da bat doan tin" : "Da tat doan tin");
+      showStatus(updated.isActive ? "Đã bật đoạn tin" : "Đã tắt đoạn tin");
     } catch (toggleError) {
-      showStatus(toggleError instanceof Error ? toggleError.message : "Khong cap nhat duoc", true);
+      showStatus(toggleError instanceof Error ? toggleError.message : "Không cập nhật được", true);
     } finally {
       setIsBusy(false);
     }
   };
 
   useEffect(() => {
-    loadAll(null, null);
+    const validateStoredSession = async () => {
+      if (!getStoredAdminToken()) {
+        setAuthState("signedOut");
+        showStatus("Cần đăng nhập");
+        return;
+      }
+
+      setAuthState("checking");
+
+      try {
+        const session = await api.validateSession();
+        setCurrentUsername(session.username ?? getStoredAdminUsername());
+        setSessionExpiresAt(session.expiresAt);
+        setAuthState("signedIn");
+        await loadAll(null, null);
+      } catch {
+        clearStoredAdminSession();
+        setAuthState("signedOut");
+        showStatus("Phiên đăng nhập đã hết hạn", true);
+      }
+    };
+
+    validateStoredSession();
   }, []);
+
+  if (authState !== "signedIn") {
+    return (
+      <LoginView
+        form={loginForm}
+        error={loginError ?? error}
+        isBusy={isBusy || authState === "checking"}
+        isChecking={authState === "checking"}
+        onFormChange={setLoginForm}
+        onSubmit={handleLogin}
+      />
+    );
+  }
 
   return (
     <div className="admin-shell">
@@ -327,7 +468,7 @@ export function App() {
             <MessageCircle size={22} />
           </div>
           <div>
-            <h1>Messenger Admin</h1>
+            <h1>Quản trị Messenger</h1>
             <p>{status}</p>
           </div>
         </div>
@@ -335,12 +476,12 @@ export function App() {
         <nav className="nav-menu">
           <button className={view === "inbox" ? "active" : ""} type="button" onClick={() => setView("inbox")}>
             <Inbox size={18} />
-            Hop thu
+            Hộp thư
             {unreadCount > 0 && <span>{unreadCount}</span>}
           </button>
           <button className={view === "snippets" ? "active" : ""} type="button" onClick={() => setView("snippets")}>
             <MessageSquareText size={18} />
-            Tin mau
+            Tin mẫu
             <span>{activeSnippetCount}</span>
           </button>
         </nav>
@@ -348,22 +489,60 @@ export function App() {
         <div className="system-card">
           <div className="card-title">
             <Activity size={18} />
-            He thong
+            Hệ thống
           </div>
           <HealthItem label="OpenAI" ready={health?.openAiApiKeyConfigured} />
-          <HealthItem label="Page token" ready={health?.messengerPageAccessTokenConfigured} />
-          <HealthItem label="Verify token" ready={health?.messengerVerifyTokenConfigured} />
-          <HealthItem label="App secret" ready={health?.messengerAppSecretConfigured} />
+          <HealthItem label="Token trang" ready={health?.messengerPageAccessTokenConfigured} />
+          <HealthItem label="Token xác minh" ready={health?.messengerVerifyTokenConfigured} />
+          <HealthItem label="Khóa ứng dụng" ready={health?.messengerAppSecretConfigured} />
         </div>
 
-        <div className="token-card">
-          <label>
-            <span>Admin token</span>
-            <input value={adminToken} type="password" onChange={(event) => setAdminToken(event.target.value)} />
-          </label>
-          <button className="secondary-button full-width" type="button" onClick={handleTokenSave}>
-            <KeyRound size={18} />
-            Luu token
+        <div className="session-card">
+          <div className="card-title">
+            <UserRound size={18} />
+            Tài khoản
+          </div>
+          <p>{currentUsername || "admin"}</p>
+          {sessionExpiresAt && <p>Phiên hết hạn: {formatDate(sessionExpiresAt)}</p>}
+          <button className="secondary-button full-width" type="button" onClick={() => setIsPasswordFormOpen((current) => !current)}>
+            <LockKeyhole size={18} />
+            Đổi mật khẩu
+          </button>
+          {isPasswordFormOpen && (
+            <form className="password-form" onSubmit={handlePasswordChange}>
+              <label>
+                <span>Mật khẩu hiện tại</span>
+                <input
+                  type="password"
+                  value={passwordForm.currentPassword}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>Mật khẩu mới</span>
+                <input
+                  type="password"
+                  value={passwordForm.newPassword}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>Xác nhận mật khẩu</span>
+                <input
+                  type="password"
+                  value={passwordForm.confirmPassword}
+                  onChange={(event) => setPasswordForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                />
+              </label>
+              <button className="primary-button full-width" type="submit" disabled={isBusy}>
+                <Save size={18} />
+                Lưu mật khẩu
+              </button>
+            </form>
+          )}
+          <button className="secondary-button full-width" type="button" onClick={handleLogout}>
+            <LogOut size={18} />
+            Đăng xuất
           </button>
         </div>
       </aside>
@@ -371,10 +550,10 @@ export function App() {
       <main className="main-panel">
         <header className="topbar">
           <div>
-            <h2>{view === "inbox" ? "Hop thu Messenger" : "Tin nhan mau"}</h2>
-            <p>{view === "inbox" ? `${conversations.length} nguoi dung da nhan tin` : `${snippets.length} doan, ${activeSnippetCount} dang bat`}</p>
+            <h2>{view === "inbox" ? "Hộp thư Messenger" : "Tin nhắn mẫu"}</h2>
+            <p>{view === "inbox" ? `${conversations.length} người dùng đã nhắn tin` : `${snippets.length} đoạn, ${activeSnippetCount} đang bật`}</p>
           </div>
-          <button className="icon-button" type="button" onClick={() => loadAll()} disabled={isBusy} title="Tai lai">
+          <button className="icon-button" type="button" onClick={() => loadAll()} disabled={isBusy} title="Tải lại">
             <RefreshCw size={18} />
           </button>
         </header>
@@ -419,6 +598,83 @@ export function App() {
   );
 }
 
+function LoginView({
+  form,
+  error,
+  isBusy,
+  isChecking,
+  onFormChange,
+  onSubmit
+}: {
+  form: { username: string; password: string; remember: boolean };
+  error: string | null;
+  isBusy: boolean;
+  isChecking: boolean;
+  onFormChange: (value: { username: string; password: string; remember: boolean } | ((current: { username: string; password: string; remember: boolean }) => { username: string; password: string; remember: boolean })) => void;
+  onSubmit: (event: FormEvent) => void;
+}) {
+  return (
+    <main className="login-shell">
+      <section className="login-panel">
+        <div className="login-brand">
+          <div className="brand-mark">
+            <MessageCircle size={24} />
+          </div>
+          <div>
+            <h1>Quản trị Messenger</h1>
+            <p>{isChecking ? "Đang kiểm tra phiên đăng nhập" : "Đăng nhập bằng tài khoản quản trị"}</p>
+          </div>
+        </div>
+
+        <form className="login-form" onSubmit={onSubmit}>
+          <label>
+            <span>Tên đăng nhập</span>
+            <div className="input-with-icon">
+              <UserRound size={18} />
+              <input
+                autoComplete="username"
+                value={form.username}
+                onChange={(event) => onFormChange((current) => ({ ...current, username: event.target.value }))}
+                placeholder="admin"
+              />
+            </div>
+          </label>
+
+          <label>
+            <span>Mật khẩu</span>
+            <div className="input-with-icon">
+              <LockKeyhole size={18} />
+              <input
+                autoComplete="current-password"
+                type="password"
+                value={form.password}
+                onChange={(event) => onFormChange((current) => ({ ...current, password: event.target.value }))}
+                placeholder="Nhập mật khẩu"
+              />
+            </div>
+          </label>
+
+          <label className="remember-row">
+            <input
+              checked={form.remember}
+              type="checkbox"
+              onChange={(event) => onFormChange((current) => ({ ...current, remember: event.target.checked }))}
+            />
+            <span>Ghi nhớ tên đăng nhập trên thiết bị này</span>
+          </label>
+
+          {error && <div className="alert compact">{error}</div>}
+
+          <button className="primary-button full-width" type="submit" disabled={isBusy}>
+            <LockKeyhole size={18} />
+            {isChecking ? "Đang kiểm tra..." : "Đăng nhập"}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 function InboxView({
   conversations,
   selectedConversation,
@@ -453,12 +709,12 @@ function InboxView({
       <aside className="conversation-panel">
         <div className="search-box">
           <Search size={17} />
-          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Tim nguoi dung, noi dung" />
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Tìm người dùng, nội dung" />
         </div>
 
         <div className="conversation-list">
           {conversations.length === 0 ? (
-            <div className="empty-state">Chua co hoi thoai</div>
+            <div className="empty-state">Chưa có hội thoại</div>
           ) : (
             conversations.map((conversation) => (
               <button
@@ -491,16 +747,16 @@ function InboxView({
               </div>
               <div>
                 <h3>{selectedConversation.displayName || selectedConversation.senderId}</h3>
-                <p>Sender ID: {selectedConversation.senderId}</p>
+                <p>Mã người gửi: {selectedConversation.senderId}</p>
               </div>
             </header>
 
             <div className="message-thread">
               <div className="agent-insights">
                 <div>
-                  <strong>Memory</strong>
+                  <strong>Bộ nhớ</strong>
                   {agentMemories.length === 0 ? (
-                    <span>Chua co memory</span>
+                    <span>Chưa có bộ nhớ</span>
                   ) : (
                     agentMemories.slice(0, 3).map((memory) => (
                       <span key={memory.id}>[{memory.memoryType}] {memory.content}</span>
@@ -508,8 +764,8 @@ function InboxView({
                   )}
                 </div>
                 <div>
-                  <strong>Tool calls</strong>
-                  <span>{agentToolCalls.length} lan gan nhat</span>
+                  <strong>Lượt gọi công cụ</strong>
+                  <span>{agentToolCalls.length} lần gần nhất</span>
                 </div>
               </div>
 
@@ -517,7 +773,7 @@ function InboxView({
                 <article key={message.id} className={`message-bubble ${message.direction}`}>
                   <div className="bubble-meta">
                     {message.source === "bot" ? <Bot size={14} /> : message.source === "admin" ? <UserRound size={14} /> : <UserRound size={14} />}
-                    <span>{message.source === "user" ? "Khach" : message.source === "bot" ? "Bot" : "Quan tri"}</span>
+                    <span>{message.source === "user" ? "Khách" : message.source === "bot" ? "Bot" : "Quản trị"}</span>
                     <time>{formatTime(message.createdAt)}</time>
                   </div>
                   <p>{message.text}</p>
@@ -529,16 +785,16 @@ function InboxView({
               <textarea
                 value={replyText}
                 onChange={(event) => onReplyTextChange(event.target.value)}
-                placeholder="Nhap tin tra loi thu cong"
+                placeholder="Nhập tin trả lời thủ công"
               />
               <button className="primary-button" type="submit" disabled={isBusy || !replyText.trim()}>
                 <Send size={18} />
-                Gui
+                Gửi
               </button>
             </form>
           </>
         ) : (
-          <div className="empty-state">Chon mot hoi thoai de xem tin nhan</div>
+          <div className="empty-state">Chọn một hội thoại để xem tin nhắn</div>
         )}
       </section>
     </section>
@@ -580,17 +836,17 @@ function SnippetsView({
         <div className="snippet-sidebar-actions">
           <div className="search-box">
             <Search size={17} />
-            <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Tim tieu de, ma, noi dung" />
+            <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Tìm tiêu đề, mã, nội dung" />
           </div>
           <button className="secondary-button" type="button" onClick={onCreate}>
             <Plus size={18} />
-            Tao
+            Tạo
           </button>
         </div>
 
         <div className="snippet-list">
           {snippets.length === 0 ? (
-            <div className="empty-state">Chua co doan phu hop</div>
+            <div className="empty-state">Chưa có đoạn phù hợp</div>
           ) : (
             snippets.map((snippet) => (
               <button
@@ -603,7 +859,7 @@ function SnippetsView({
                   <strong>{snippet.title}</strong>
                   <small>{snippet.shortcut || snippet.content}</small>
                 </span>
-                <span className={`state-pill ${snippet.isActive ? "on" : "off"}`}>{snippet.isActive ? "Bat" : "Tat"}</span>
+                <span className={`state-pill ${snippet.isActive ? "on" : "off"}`}>{snippet.isActive ? "Bật" : "Tắt"}</span>
               </button>
             ))
           )}
@@ -612,17 +868,17 @@ function SnippetsView({
 
       <form className="editor-panel" onSubmit={onSubmit}>
         <label>
-          <span>Tieu de</span>
+          <span>Tiêu đề</span>
           <input value={form.title} maxLength={120} onChange={(event) => onFormChange((current) => ({ ...current, title: event.target.value }))} />
         </label>
 
         <label>
-          <span>Ma goi nho</span>
+          <span>Mã gợi nhớ</span>
           <input value={form.shortcut ?? ""} maxLength={80} onChange={(event) => onFormChange((current) => ({ ...current, shortcut: event.target.value || null }))} />
         </label>
 
         <label>
-          <span>Noi dung</span>
+          <span>Nội dung</span>
           <textarea value={form.content} maxLength={2000} onChange={(event) => onFormChange((current) => ({ ...current, content: event.target.value }))} />
         </label>
 
@@ -633,28 +889,28 @@ function SnippetsView({
             onClick={() => onFormChange((current) => ({ ...current, isActive: !current.isActive }))}
           >
             {form.isActive ? <CheckCircle2 size={18} /> : <CircleOff size={18} />}
-            {form.isActive ? "Dang bat" : "Dang tat"}
+            {form.isActive ? "Đang bật" : "Đang tắt"}
           </button>
-          <span>{form.content.length}/2000 ky tu</span>
-          <span>Cap nhat: {formatDate(selectedSnippet?.updatedAt)}</span>
+          <span>{form.content.length}/2000 ký tự</span>
+          <span>Cập nhật: {formatDate(selectedSnippet?.updatedAt)}</span>
         </div>
 
         <div className="form-footer">
           <div className="topbar-actions">
             <button className="danger-button" type="button" onClick={onDelete} disabled={!selectedSnippet || isBusy}>
               <Trash2 size={18} />
-              Xoa
+              Xóa
             </button>
             {selectedSnippet && (
               <button className="secondary-button" type="button" onClick={() => onToggleActive(selectedSnippet)} disabled={isBusy}>
                 {selectedSnippet.isActive ? <CircleOff size={18} /> : <CheckCircle2 size={18} />}
-                {selectedSnippet.isActive ? "Tat nhanh" : "Bat nhanh"}
+                {selectedSnippet.isActive ? "Tắt nhanh" : "Bật nhanh"}
               </button>
             )}
           </div>
           <button className="primary-button" type="submit" disabled={isBusy}>
             <Save size={18} />
-            Luu
+            Lưu
           </button>
         </div>
       </form>
@@ -666,7 +922,7 @@ function HealthItem({ label, ready }: { label: string; ready?: boolean }) {
   return (
     <div className="health-row">
       <span>{label}</span>
-      <strong className={ready ? "ready" : "missing"}>{ready ? "OK" : "Thieu"}</strong>
+      <strong className={ready ? "ready" : "missing"}>{ready ? "OK" : "Thiếu"}</strong>
     </div>
   );
 }

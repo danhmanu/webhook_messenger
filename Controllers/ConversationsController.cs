@@ -4,13 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 [Route("api/v1/conversations")]
 public sealed class ConversationsController(
     AppDatabase database,
-    MessengerService messenger,
-    IConfiguration config) : ControllerBase
+    MessengerService messenger) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -21,7 +20,7 @@ public sealed class ConversationsController(
     [HttpGet("{senderId}/messages")]
     public async Task<IActionResult> ListMessages(string senderId, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -33,7 +32,7 @@ public sealed class ConversationsController(
     [HttpGet("{senderId}/agent-memories")]
     public async Task<IActionResult> ListAgentMemories(string senderId, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -44,7 +43,7 @@ public sealed class ConversationsController(
     [HttpGet("{senderId}/agent-tool-calls")]
     public async Task<IActionResult> ListAgentToolCalls(string senderId, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
@@ -55,7 +54,7 @@ public sealed class ConversationsController(
     [HttpPost("{senderId}/messages")]
     public async Task<IActionResult> SendMessage(string senderId, [FromBody] SendConversationMessage input, CancellationToken cancellationToken)
     {
-        if (!AdminAuth.IsAuthorized(Request, config))
+        if (await AdminAuth.GetSessionAsync(Request, database, cancellationToken) is null)
         {
             return Unauthorized();
         }
