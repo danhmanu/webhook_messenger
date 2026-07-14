@@ -316,6 +316,9 @@ FakesAssemblies/
 node_modules/
 worker-configuration.d.ts
 data/message-snippets.json
+data/messenger-webhook.db
+data/messenger-webhook.db-*
+tsconfig.app.tsbuildinfo
 
 # Visual Studio 6 build log
 *.plg

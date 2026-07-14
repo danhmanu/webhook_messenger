@@ -5,6 +5,8 @@ obj/
 .env
 node_modules/
 worker-configuration.d.ts
+data/
+wwwroot/
 *.user
 *.suo
 *.cache
