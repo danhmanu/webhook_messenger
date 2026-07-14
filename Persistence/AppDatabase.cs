@@ -58,6 +58,19 @@ public sealed class AppDatabase(IWebHostEnvironment environment, IConfiguration 
                 CREATE INDEX IF NOT EXISTS ix_conversation_messages_sender_created
                     ON conversation_messages(sender_id, created_at);
 
+                DELETE FROM conversation_messages
+                WHERE facebook_message_id IS NOT NULL
+                  AND rowid NOT IN (
+                      SELECT MIN(rowid)
+                      FROM conversation_messages
+                      WHERE facebook_message_id IS NOT NULL
+                      GROUP BY facebook_message_id
+                  );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_conversation_messages_facebook_message_id
+                    ON conversation_messages(facebook_message_id)
+                    WHERE facebook_message_id IS NOT NULL;
+
                 CREATE INDEX IF NOT EXISTS ix_conversations_last_message_at
                     ON conversations(last_message_at DESC);
 
@@ -664,6 +677,35 @@ public sealed class AppDatabase(IWebHostEnvironment environment, IConfiguration 
             AddParameter(command, "$senderId", senderId);
             AddParameter(command, "$updatedAt", ToStorage(DateTimeOffset.UtcNow));
             await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<bool> HasConversationMessageByFacebookIdAsync(string? facebookMessageId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(facebookMessageId))
+        {
+            return false;
+        }
+
+        await _lock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await using var connection = OpenConnection();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT 1
+                FROM conversation_messages
+                WHERE facebook_message_id = $facebookMessageId
+                LIMIT 1;
+                """;
+            AddParameter(command, "$facebookMessageId", facebookMessageId);
+
+            return await command.ExecuteScalarAsync(cancellationToken) is not null;
         }
         finally
         {

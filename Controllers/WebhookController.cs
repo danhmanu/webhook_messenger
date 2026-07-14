@@ -98,6 +98,17 @@ public sealed class WebhookController(
             return;
         }
 
+        var facebookMessageId = messaging.Message?.Mid;
+
+        if (await database.HasConversationMessageByFacebookIdAsync(facebookMessageId, cancellationToken))
+        {
+            logger.LogInformation(
+                "Ignored duplicate Messenger message {FacebookMessageId} from sender {SenderId}",
+                facebookMessageId,
+                senderId);
+            return;
+        }
+
         try
         {
             logger.LogInformation(
@@ -111,7 +122,7 @@ public sealed class WebhookController(
                 "user",
                 text,
                 messaging.EventType,
-                messaging.Message?.Mid,
+                facebookMessageId,
                 true,
                 cancellationToken);
 
