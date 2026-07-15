@@ -33,7 +33,7 @@ public sealed class WebhookController(
     {
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var body = await reader.ReadToEndAsync(cancellationToken);
-
+        logger.LogInformation("Received webhook with body: {Body}", body);
         if (!verifier.IsValid(Request, body))
         {
             logger.LogWarning("Rejected webhook because X-Hub-Signature-256 is invalid or missing");
