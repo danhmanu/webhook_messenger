@@ -5,7 +5,7 @@ public sealed class HospitalChatModel(HttpClient httpClient, IConfiguration conf
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly string _baseUrl = (config["App:OpenAiBaseUrl"] ?? "http://chatbot.bvdkgiadinh.com:5000/api").TrimEnd('/');
+    private readonly string _baseUrl = (config["App:OpenAiBaseUrl"] ?? "http://10.0.0.142:5000/api").TrimEnd('/');
 
     public async Task<string> CreateChatCompletionAsync(
         string systemPrompt,
